@@ -1,0 +1,12 @@
+{
+  "name": "trading-master",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Vue 3 + Node.js trading journal dashboard for forex and crypto review.",
+  "scripts": {
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server run dev",
+    "build:client": "npm --prefix client run build",
+    "build:server": "npm --prefix server run build"
+  }
+}
