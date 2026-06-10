@@ -63,6 +63,10 @@ function parseJsonArray(value: string | string[] | null): string[] {
  * @returns Normalized trade object.
  */
 export function mapTradeRow(row: TradeRow): Trade {
+  const rawPnl = Number(row.pnl);
+  const fee = Number(row.fee);
+  const netPnl = Number((rawPnl - fee).toFixed(8));
+
   return {
     id: row.id,
     tradeId: row.trade_id,
@@ -74,9 +78,9 @@ export function mapTradeRow(row: TradeRow): Trade {
     leverage: row.leverage,
     entryTime: new Date(row.entry_time).toISOString(),
     exitTime: row.exit_time ? new Date(row.exit_time).toISOString() : null,
-    pnl: Number(row.pnl),
+    pnl: netPnl,
     pnlPercentage: Number(row.pnl_percentage),
-    fee: Number(row.fee),
+    fee,
     status: row.status,
     entryReason: row.entry_reason,
     exitReason: row.exit_reason,
@@ -301,10 +305,10 @@ export class TradeService {
       `INSERT INTO daily_summary (date, total_pnl, trade_count, win_count, loss_count, total_fee)
        SELECT
          DATE(COALESCE(exit_time, entry_time)) AS date,
-         COALESCE(SUM(pnl), 0) AS total_pnl,
+         COALESCE(SUM(pnl - fee), 0) AS total_pnl,
          COUNT(*) AS trade_count,
-         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS win_count,
-         SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) AS loss_count,
+         SUM(CASE WHEN pnl - fee > 0 THEN 1 ELSE 0 END) AS win_count,
+         SUM(CASE WHEN pnl - fee < 0 THEN 1 ELSE 0 END) AS loss_count,
          COALESCE(SUM(fee), 0) AS total_fee
        FROM trades
        WHERE status = 'closed'
