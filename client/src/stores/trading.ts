@@ -28,6 +28,7 @@ import type {
 
 const staticMt5FallbackEnabled =
   import.meta.env.DEV || import.meta.env.VITE_ENABLE_STATIC_MT5 === 'true';
+const tradeCachePageSize = 5000;
 
 const defaultPagination: Pagination = {
   page: 1,
@@ -100,14 +101,17 @@ export const useTradingStore = defineStore('trading', () => {
 
   async function loadTrades(page = pagination.value.page, pageSize = pagination.value.pageSize) {
     await withRequestState(async () => {
+      const requestPageSize = Math.max(pageSize, tradeCachePageSize);
+
       try {
         const result = await fetchTrades({
           ...filters.value,
-          page,
-          pageSize
+          page: 1,
+          pageSize: requestPageSize
         });
 
         exchangeTrades.value = result.data;
+        pagination.value = result.pagination;
       } catch {
         exchangeTrades.value = [];
       }
@@ -120,8 +124,8 @@ export const useTradingStore = defineStore('trading', () => {
       pagination.value = {
         page,
         pageSize,
-        total: trades.value.length,
-        totalPages: Math.max(1, Math.ceil(trades.value.length / pageSize))
+        total: Math.max(pagination.value.total, trades.value.length),
+        totalPages: Math.max(1, Math.ceil(Math.max(pagination.value.total, trades.value.length) / pageSize))
       };
     });
   }

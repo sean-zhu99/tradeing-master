@@ -12,6 +12,7 @@ import type {
 const tradeService = new TradeService();
 const DIRECTIONS: TradeDirection[] = ['long', 'short'];
 const STATUSES: TradeStatus[] = ['open', 'closed'];
+const MAX_PAGE_SIZE = 5000;
 
 /**
  * Handles trade CRUD HTTP requests.
@@ -114,8 +115,8 @@ export function parsePagination(req: Request): PaginationOptions {
     throw new ValidationError('page 必须是大于 0 的整数');
   }
 
-  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
-    throw new ValidationError('pageSize 必须是 1 到 100 之间的整数');
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+    throw new ValidationError(`pageSize 必须是 1 到 ${MAX_PAGE_SIZE} 之间的整数`);
   }
 
   return { page, pageSize };
