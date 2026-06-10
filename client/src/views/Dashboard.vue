@@ -339,8 +339,8 @@ const recentTrades = computed(() => {
 });
 
 onMounted(async () => {
+  await tradingStore.loadTrades(1, 50);
   await Promise.allSettled([
-    tradingStore.loadTrades(1, 50),
     tradingStore.loadDailySummary(1),
     tradingStore.loadOverallStats()
   ]);
@@ -413,17 +413,11 @@ function renderPnlChart() {
         {
           name: '累计盈亏',
           type: 'line',
-          smooth: true,
+          smooth: false,
           symbol: 'circle',
-          symbolSize: 7,
+          symbolSize: 5,
           lineStyle: { width: 3, color: lineColor },
           itemStyle: { color: lineColor },
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: withAlpha(lineColor, 0.28) },
-              { offset: 1, color: withAlpha(lineColor, 0.02) }
-            ])
-          },
           markPoint: {
             symbolSize: 56,
             label: { formatter: ({ name }: { name: string }) => name },
@@ -512,15 +506,6 @@ function compactNumber(value: number) {
 
 function formatDateTime(value: string) {
   return dayjs(value).format('YYYY-MM-DD HH:mm');
-}
-
-function withAlpha(hex: string, alpha: number) {
-  const clean = hex.replace('#', '');
-  const red = Number.parseInt(clean.slice(0, 2), 16);
-  const green = Number.parseInt(clean.slice(2, 4), 16);
-  const blue = Number.parseInt(clean.slice(4, 6), 16);
-
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 function buildPalette(base: string) {
