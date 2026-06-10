@@ -64,6 +64,28 @@ npm run dev:client
 - `/review`：公开复盘记录
 - `/review/manage`：复盘管理页，隐藏路由
 
+## MT5 自动同步
+
+项目支持通过本地 MT5 EA 将订单同步到云服务器：
+
+```text
+本地 MT5 -> POST /api/mt5/sync -> MySQL -> 前端看板
+```
+
+后端需要在 `.env` 中配置同步密钥：
+
+```bash
+MT5_SYNC_TOKEN=replace_with_a_long_random_token
+```
+
+MT5 端使用 `mt5/TradingMasterSyncEA.mq5`，将 `EndpointUrl` 设置为你的服务器地址，例如：
+
+```text
+http://your-server-ip/api/mt5/sync
+```
+
+并把 EA 的 `SyncToken` 设置为和服务器 `.env` 中相同的值。MT5 关闭时数据不会实时更新；下次打开 MT5 后，EA 会按配置的历史回看天数补同步订单。同步时会按 `trade_id` 去重，已有订单只更新交易价格、盈亏和状态，不覆盖复盘备注、标签、截图和评分。
+
 ## 构建检查
 
 ```bash
@@ -73,4 +95,4 @@ npm run build:server
 
 ## 说明
 
-当前前端内置了几笔案例交易数据，用于在后端或交易所 API 尚未接入时预览整体界面效果。后续接入真实交易所订单同步后，复盘管理页会基于已有订单补充复盘内容。
+开发环境会在后端没有数据时加载静态 MT5 报表作为预览兜底；生产环境默认只展示云服务器数据库中的订单数据。

@@ -6,6 +6,7 @@
 #property version "1.00"
 
 input string EndpointUrl = "http://127.0.0.1:3000/api/mt5/sync";
+input string SyncToken = "";
 input int SyncIntervalMinutes = 60;
 input int HistoryLookbackDays = 3650;
 
@@ -203,6 +204,7 @@ int PostJson(const string payload)
    char result[];
    string resultHeaders;
    string headers = "Content-Type: application/json\r\n";
+   headers += "X-MT5-Sync-Token: " + SyncToken + "\r\n";
 
    StringToCharArray(payload, data, 0, WHOLE_ARRAY, CP_UTF8);
    if(ArraySize(data) > 0)

@@ -4,7 +4,13 @@ import type { CreateTradeInput, TradeDirection, TradeStatus, UpdateTradeInput } 
 const tradeService = new TradeService();
 
 export class Mt5SyncError extends Error {
-  statusCode = 400;
+  statusCode: number;
+
+  constructor(message: string, statusCode = 400) {
+    super(message);
+    this.name = 'Mt5SyncError';
+    this.statusCode = statusCode;
+  }
 }
 
 export interface Mt5TradePayload {
@@ -35,6 +41,23 @@ export interface Mt5SyncResult {
   received: number;
   created: number;
   updated: number;
+}
+
+/**
+ * Validates the shared MT5 sync token before accepting broker data.
+ *
+ * @param token - Token sent by the MT5 expert advisor.
+ */
+export function assertMt5SyncToken(token: unknown) {
+  const expectedToken = process.env.MT5_SYNC_TOKEN;
+
+  if (!expectedToken) {
+    throw new Mt5SyncError('服务器未配置 MT5_SYNC_TOKEN，拒绝同步', 503);
+  }
+
+  if (typeof token !== 'string' || token !== expectedToken) {
+    throw new Mt5SyncError('MT5 同步密钥不正确', 401);
+  }
 }
 
 /**

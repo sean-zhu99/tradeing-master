@@ -25,9 +25,9 @@ import type {
   TradePayload,
   TradeUpdatePayload
 } from '@/types';
-import { mt5DemoTrades } from '@/data/mt5DemoTrades';
 
-const mt5Trades = mt5DemoTrades;
+const staticMt5FallbackEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_ENABLE_STATIC_MT5 === 'true';
 
 const defaultPagination: Pagination = {
   page: 1,
@@ -61,7 +61,7 @@ const demoBalance: Balance = {
 export const useTradingStore = defineStore('trading', () => {
   const trades = ref<Trade[]>([]);
   const exchangeTrades = ref<Trade[]>([]);
-  const mt5ReportTrades = ref<Trade[]>([...mt5Trades]);
+  const mt5ReportTrades = ref<Trade[]>([]);
   const selectedTrade = ref<Trade | null>(null);
   const filters = ref<TradeFilter>({});
   const pagination = ref<Pagination>({ ...defaultPagination });
@@ -110,6 +110,10 @@ export const useTradingStore = defineStore('trading', () => {
         exchangeTrades.value = result.data;
       } catch {
         exchangeTrades.value = [];
+      }
+
+      if (staticMt5FallbackEnabled && !exchangeTrades.value.length) {
+        await loadStaticMt5Fallback();
       }
 
       trades.value = mergeTrades(exchangeTrades.value, mt5ReportTrades.value);
@@ -249,6 +253,12 @@ export const useTradingStore = defineStore('trading', () => {
       }
       await Promise.all([loadTrades(1), loadDailySummary(1), loadOverallStats(), loadTagStats(1)]);
     });
+  }
+
+  async function loadStaticMt5Fallback() {
+    if (mt5ReportTrades.value.length) return;
+    const module = await import('@/data/mt5DemoTrades');
+    mt5ReportTrades.value = [...module.mt5DemoTrades];
   }
 
   async function loadTradeKline(id: number): Promise<TradeKlineData> {

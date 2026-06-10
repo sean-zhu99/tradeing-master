@@ -159,17 +159,38 @@ function renderCharts() {
   if (directionRef.value) {
     directionChart = directionChart || echarts.init(directionRef.value);
     directionChart.setOption({
-      tooltip: { trigger: 'item' },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        valueFormatter: (value: number) => formatCurrency(value)
+      },
+      grid: { left: 88, right: 104, top: 38, bottom: 42 },
+      xAxis: {
+        type: 'value',
+        axisLabel: { formatter: '${value}' },
+        splitLine: { lineStyle: { color: '#eee6dc' } }
+      },
+      yAxis: {
+        type: 'category',
+        data: directionStats.value.map((item) => (item.direction === 'long' ? 'Long' : 'Short')),
+        axisTick: { show: false }
+      },
       series: [
         {
-          type: 'pie',
-          radius: ['48%', '72%'],
+          type: 'bar',
           data: directionStats.value.map((item) => ({
-            name: `${item.direction === 'long' ? 'Long' : 'Short'} · ${item.count}笔`,
-            value: Math.abs(item.pnl),
+            value: item.pnl,
+            count: item.count,
             itemStyle: { color: item.pnl >= 0 ? '#2f9d73' : '#d25d52' }
           })),
-          label: { formatter: '{b}\\n${c}' }
+          barMaxWidth: 34,
+          label: {
+            show: true,
+            position: 'right',
+            color: '#2f3437',
+            formatter: (params: { value: number; data: { count: number } }) =>
+              `${params.data.count}笔 · ${formatCurrency(Number(params.value))}`
+          }
         }
       ]
     });
