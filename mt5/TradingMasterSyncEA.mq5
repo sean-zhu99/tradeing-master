@@ -1,9 +1,9 @@
 //+------------------------------------------------------------------+
 //| Trading Master MT5 Sync EA                                       |
-//| Sends positions and recent closed trades to the local dashboard. |
+//| Sends positions and recent closed trades to Trading Master.      |
 //+------------------------------------------------------------------+
 #property strict
-#property version "1.00"
+#property version "1.01"
 
 input string EndpointUrl = "http://127.0.0.1:3000/api/mt5/sync";
 input string SyncToken = "";
@@ -28,6 +28,10 @@ struct TradeRecord
 
 int OnInit()
 {
+   Print("Trading Master EA init. endpoint=", EndpointUrl,
+         " tokenSet=", (StringLen(SyncToken) > 0 ? "yes" : "no"),
+         " intervalMinutes=", SyncIntervalMinutes,
+         " lookbackDays=", HistoryLookbackDays);
    EventSetTimer(MathMax(60, SyncIntervalMinutes * 60));
    SyncToDashboard();
    return INIT_SUCCEEDED;
@@ -52,12 +56,12 @@ void SyncToDashboard()
    CollectOpenPositions(records);
 
    string payload = BuildPayload(records);
-   int statusCode = PostJson(payload);
+   int statusCode = PostJson(payload, ArraySize(records));
 
    if(statusCode >= 200 && statusCode < 300)
       Print("Trading Master sync completed. records=", ArraySize(records), " status=", statusCode);
    else
-      Print("Trading Master sync failed. status=", statusCode, " error=", GetLastError());
+      Print("Trading Master sync failed. records=", ArraySize(records), " status=", statusCode, " error=", GetLastError());
 }
 
 void CollectOpenPositions(TradeRecord &records[])
@@ -198,7 +202,7 @@ string BuildPayload(const TradeRecord &records[])
    return json;
 }
 
-int PostJson(const string payload)
+int PostJson(const string payload, const int recordCount)
 {
    char data[];
    char result[];
@@ -210,10 +214,19 @@ int PostJson(const string payload)
    if(ArraySize(data) > 0)
       ArrayResize(data, ArraySize(data) - 1);
 
+   Print("Trading Master request. endpoint=", EndpointUrl,
+         " tokenSet=", (StringLen(SyncToken) > 0 ? "yes" : "no"),
+         " records=", recordCount,
+         " bytes=", ArraySize(data));
+
    ResetLastError();
-   int statusCode = WebRequest("POST", EndpointUrl, headers, 10000, data, result, resultHeaders);
+   int statusCode = WebRequest("POST", EndpointUrl, headers, 15000, data, result, resultHeaders);
+   int errorCode = GetLastError();
    string response = CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
-   Print("Trading Master response: ", response);
+
+   Print("Trading Master status=", statusCode, " error=", errorCode);
+   Print("Trading Master response headers: ", resultHeaders);
+   Print("Trading Master response body: ", response);
    return statusCode;
 }
 

@@ -201,8 +201,8 @@ export class TradeService {
         input.exitPrice ?? null,
         input.quantity,
         input.leverage ?? 1,
-        input.entryTime,
-        input.exitTime ?? null,
+        toMysqlDateTime(input.entryTime),
+        toMysqlDateTime(input.exitTime ?? null),
         input.pnl ?? 0,
         input.pnlPercentage ?? 0,
         input.fee ?? 0,
@@ -262,7 +262,7 @@ export class TradeService {
 
       assignments.push(`${column} = ?`);
       const value = input[key];
-      values.push(Array.isArray(value) ? JSON.stringify(value) : (value as SqlValue));
+      values.push(formatDatabaseValue(key, value));
     }
 
     if (!assignments.length) {
@@ -353,4 +353,21 @@ export class TradeService {
       params
     };
   }
+}
+
+function formatDatabaseValue(key: keyof UpdateTradeInput, value: UpdateTradeInput[keyof UpdateTradeInput]): SqlValue {
+  if (Array.isArray(value)) return JSON.stringify(value);
+  if (key === 'entryTime' || key === 'exitTime') return toMysqlDateTime(value as string | null | undefined);
+  return value as SqlValue;
+}
+
+function toMysqlDateTime(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+
+  if (!Number.isNaN(date.getTime())) {
+    return date.toISOString().slice(0, 19).replace('T', ' ');
+  }
+
+  return value.replace('T', ' ').replace(/\.\d{3}Z$/, '').replace(/Z$/, '').slice(0, 19);
 }
