@@ -26,6 +26,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '盈亏分析' }
       },
       {
+        path: 'mt5-report',
+        name: 'Mt5Report',
+        component: () => import('@/views/Mt5StaticReport.vue'),
+        meta: { title: 'MT5报表' }
+      },
+      {
         path: 'calendar',
         name: 'Calendar',
         component: () => import('@/views/Calender.vue'),

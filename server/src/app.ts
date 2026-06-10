@@ -8,6 +8,7 @@ dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+const host = process.env.HOST || '127.0.0.1';
 
 app.use(cors());
 app.use(express.json());
@@ -19,6 +20,6 @@ app.get('/health', (_req, res) => {
 registerRoutes(app);
 startMarketDataCron();
 
-app.listen(port, () => {
-  console.log(`Trading Master API is running on http://localhost:${port}`);
+app.listen(port, host, () => {
+  console.log(`Trading Master API is running on http://${host}:${port}`);
 });

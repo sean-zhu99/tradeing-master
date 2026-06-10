@@ -98,3 +98,17 @@ export interface CreateTradeInput {
 }
 
 export type UpdateTradeInput = Partial<CreateTradeInput>;
+
+export interface KlineCandle {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface TradeKlineData {
+  trade: Trade;
+  candles: KlineCandle[];
+}

@@ -116,6 +116,20 @@ export interface SyncResult {
   affectedRows: number;
 }
 
+export interface KlineCandle {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface TradeKlineData {
+  trade: Trade;
+  candles: KlineCandle[];
+}
+
 export interface ListResponse<T> {
   data: T[];
   pagination: Pagination;

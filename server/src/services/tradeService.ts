@@ -150,6 +150,21 @@ export class TradeService {
   }
 
   /**
+   * Finds one trade by the external broker/order identifier.
+   *
+   * @param tradeId - External trade identifier from MT5 or an exchange.
+   * @returns Trade detail, or null when not found.
+   */
+  async getTradeByTradeId(tradeId: string): Promise<Trade | null> {
+    const [rows] = await dbPool.query<(TradeRow & RowDataPacket)[]>(
+      `SELECT ${TRADE_COLUMNS} FROM trades WHERE trade_id = ? LIMIT 1`,
+      [tradeId]
+    );
+
+    return rows[0] ? mapTradeRow(rows[0]) : null;
+  }
+
+  /**
    * Creates a manual trade record for journaling and review.
    *
    * @param input - Validated trade payload.

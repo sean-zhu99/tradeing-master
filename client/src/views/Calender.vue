@@ -120,7 +120,7 @@
 
     <el-dialog v-model="dayDialogVisible" :title="activeDateTitle" width="720px">
       <el-table :data="activeTrades" empty-text="当天暂无交易">
-        <el-table-column prop="symbol" label="交易对" min-width="120" />
+        <el-table-column prop="symbol" label="品种" min-width="120" />
         <el-table-column label="方向" min-width="80">
           <template #default="{ row }">{{ row.direction === 'long' ? '做多' : '做空' }}</template>
         </el-table-column>

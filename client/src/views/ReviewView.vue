@@ -10,17 +10,14 @@
 
     <el-card class="review-filter" shadow="never">
       <el-date-picker
-        v-model="filters.dateRange"
-        type="daterange"
+        v-model="filters.date"
+        type="date"
         value-format="YYYY-MM-DD"
-        start-placeholder="开始日期"
-        end-placeholder="结束日期"
+        placeholder="选择某一天"
+        clearable
       />
-      <el-select v-model="filters.symbols" multiple collapse-tags placeholder="交易对">
+      <el-select v-model="filters.symbols" multiple collapse-tags placeholder="品种">
         <el-option v-for="symbol in symbolOptions" :key="symbol" :label="symbol" :value="symbol" />
-      </el-select>
-      <el-select v-model="filters.tags" multiple collapse-tags placeholder="标签">
-        <el-option v-for="tag in tagOptions" :key="tag" :label="tag" :value="tag" />
       </el-select>
       <el-select v-model="filters.pnlStatus" placeholder="盈亏状态">
         <el-option label="全部" value="all" />
@@ -30,72 +27,48 @@
       <el-input v-model="filters.keyword" clearable placeholder="搜索进场理由、备注" />
     </el-card>
 
-    <div v-loading="tradingStore.loading" class="review-list">
+    <div class="gallery-heading">
+      <span class="gallery-icon">
+        <el-icon><Grid /></el-icon>
+      </span>
+      <strong>Trades Gallery</strong>
+    </div>
+
+    <div v-loading="tradingStore.loading" class="review-gallery">
       <el-empty v-if="!filteredTrades.length" description="暂无复盘记录" />
       <article
         v-for="trade in filteredTrades"
         :key="trade.id"
-        class="review-card"
-        :class="trade.pnl >= 0 ? 'win-card' : 'loss-card'"
+        class="gallery-card"
         @click="openDetail(trade)"
       >
-        <div class="card-top">
-          <div>
-            <strong>{{ trade.symbol }}</strong>
-            <el-tag :type="trade.direction === 'long' ? 'success' : 'danger'" effect="plain">
-              {{ trade.direction === 'long' ? '做多' : '做空' }}
+        <div class="chart-shot">
+          <img :src="coverImage(trade)" :alt="`${trade.symbol} chart`" />
+        </div>
+        <div class="gallery-body">
+          <div class="gallery-symbol">
+            <span class="star">✪</span>
+            <strong>{{ shortSymbol(trade.symbol) }}</strong>
+          </div>
+          <div class="gallery-meta">
+            <el-tag :type="trade.direction === 'long' ? 'success' : 'danger'" effect="plain" round>
+              {{ trade.direction === 'long' ? 'Long' : 'Short' }}
             </el-tag>
+            <span class="result-pill" :class="trade.pnl >= 0 ? 'result-profit' : 'result-loss'">
+              {{ trade.pnl >= 0 ? '盈利' : '亏损' }}
+            </span>
           </div>
-          <div class="pnl-block" :class="trade.pnl >= 0 ? 'profit-value' : 'loss-value'">
-            {{ formatCurrency(trade.pnl) }}
-          </div>
-        </div>
-
-        <div class="price-row">
-          <span>{{ formatPrice(trade.entryPrice) }}</span>
-          <b>→</b>
-          <span>{{ trade.exitPrice ? formatPrice(trade.exitPrice) : '未平仓' }}</span>
-        </div>
-
-        <div class="meta-grid">
-          <span>数量 {{ formatNumber(trade.quantity) }}</span>
-          <span>{{ trade.leverage }}x</span>
-          <span>{{ holdingDuration(trade) }}</span>
-          <el-rate :model-value="trade.rating || 0" disabled size="small" />
-        </div>
-
-        <p class="reason" :class="{ collapsed: !expandedIds.has(trade.id) }" @click.stop>
-          {{ trade.entryReason || '暂无进场理由' }}
-        </p>
-        <el-button
-          v-if="(trade.entryReason || '').length > 90"
-          link
-          type="primary"
-          @click.stop="toggleReason(trade.id)"
-        >
-          {{ expandedIds.has(trade.id) ? '收起' : '展开' }}
-        </el-button>
-
-        <div class="tag-row">
-          <el-tag v-for="tag in trade.tags" :key="tag" round effect="plain">{{ tag }}</el-tag>
+          <strong class="gallery-pnl" :class="trade.pnl >= 0 ? 'profit-value' : 'loss-value'">
+            {{ formatPnlAmount(trade.pnl) }}
+          </strong>
         </div>
       </article>
     </div>
 
-    <el-card class="review-stats" shadow="never">
-      <template #header>
-        <div class="section-heading">
-          <span>按标签统计</span>
-          <small>盈亏总额 / 使用次数 / 胜率</small>
-        </div>
-      </template>
-      <div ref="tagChartRef" class="tag-chart"></div>
-    </el-card>
-
     <el-dialog v-model="detailVisible" title="交易复盘详情" width="760px" class="review-dialog">
       <template v-if="activeTrade">
         <div class="detail-grid">
-          <div><span>交易对</span><b>{{ activeTrade.symbol }}</b></div>
+          <div><span>品种</span><b>{{ activeTrade.symbol }}</b></div>
           <div><span>方向</span><b>{{ activeTrade.direction === 'long' ? '做多' : '做空' }}</b></div>
           <div><span>入场价</span><b>{{ formatPrice(activeTrade.entryPrice) }}</b></div>
           <div><span>出场价</span><b>{{ activeTrade.exitPrice ? formatPrice(activeTrade.exitPrice) : '-' }}</b></div>
@@ -143,30 +116,33 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import * as echarts from 'echarts';
-import type { ECharts } from 'echarts';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { Grid } from '@element-plus/icons-vue';
 import dayjs from 'dayjs';
 import { useTradingStore } from '@/stores/trading';
 import type { Trade } from '@/types';
 
 const tradingStore = useTradingStore();
-const tagChartRef = ref<HTMLDivElement>();
-const tagChart = ref<ECharts>();
 const detailVisible = ref(false);
 const activeTrade = ref<Trade | null>(null);
-const expandedIds = ref(new Set<number>());
 
 const filters = reactive({
-  dateRange: [] as string[],
+  date: '',
   symbols: [] as string[],
-  tags: [] as string[],
   pnlStatus: 'all',
   keyword: ''
 });
 
 const symbolOptions = computed(() => tradingStore.symbols);
-const tagOptions = computed(() => tradingStore.tags);
+
+const defaultStartDate = computed(() => {
+  const latestTradeDate = tradingStore.trades
+    .filter((trade) => trade.status === 'closed')
+    .map((trade) => dayjs(trade.exitTime || trade.entryTime))
+    .sort((a, b) => b.valueOf() - a.valueOf())[0];
+
+  return (latestTradeDate || dayjs()).subtract(2, 'day').format('YYYY-MM-DD');
+});
 
 const filteredTrades = computed(() => {
   return tradingStore.trades
@@ -174,101 +150,24 @@ const filteredTrades = computed(() => {
     .filter((trade) => {
       const closedDate = dayjs(trade.exitTime || trade.entryTime).format('YYYY-MM-DD');
       const keyword = filters.keyword.trim().toLowerCase();
-      if (filters.dateRange.length === 2 && (closedDate < filters.dateRange[0] || closedDate > filters.dateRange[1])) return false;
+      if (filters.date && closedDate !== filters.date) return false;
+      if (!filters.date && closedDate < defaultStartDate.value) return false;
       if (filters.symbols.length && !filters.symbols.includes(trade.symbol)) return false;
-      if (filters.tags.length && !filters.tags.every((tag) => trade.tags.includes(tag))) return false;
       if (filters.pnlStatus === 'profit' && trade.pnl <= 0) return false;
       if (filters.pnlStatus === 'loss' && trade.pnl >= 0) return false;
       if (keyword && !`${trade.entryReason || ''} ${trade.notes || ''}`.toLowerCase().includes(keyword)) return false;
       return true;
-    });
-});
-
-const tagStats = computed(() => {
-  const map = new Map<string, { pnl: number; count: number; wins: number }>();
-  for (const trade of filteredTrades.value) {
-    for (const tag of trade.tags) {
-      const item = map.get(tag) || { pnl: 0, count: 0, wins: 0 };
-      item.pnl += trade.pnl;
-      item.count += 1;
-      item.wins += trade.pnl > 0 ? 1 : 0;
-      map.set(tag, item);
-    }
-  }
-  return Array.from(map.entries())
-    .map(([tag, item]) => ({ tag, pnl: item.pnl, count: item.count, winRate: item.count ? (item.wins / item.count) * 100 : 0 }))
-    .sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl));
+    })
+    .sort((a, b) => dayjs(b.exitTime || b.entryTime).valueOf() - dayjs(a.exitTime || a.entryTime).valueOf());
 });
 
 onMounted(async () => {
   await tradingStore.loadTrades(1, 100);
-  await nextTick();
-  if (tagChartRef.value) tagChart.value = echarts.init(tagChartRef.value);
-  renderTagChart();
-  window.addEventListener('resize', resizeChart);
 });
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', resizeChart);
-  tagChart.value?.dispose();
-});
-
-watch(tagStats, renderTagChart);
-
-function renderTagChart() {
-  if (!tagChart.value) return;
-  const data = tagStats.value.slice(0, 12);
-  tagChart.value.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 84, right: 28, top: 20, bottom: 28 },
-    xAxis: { type: 'value', axisLabel: { formatter: (value: number) => formatCompact(value) } },
-    yAxis: { type: 'category', data: data.map((item) => item.tag) },
-    series: [
-      {
-        type: 'bar',
-        data: data.map((item) => ({
-          value: Number(item.pnl.toFixed(2)),
-          itemStyle: { color: item.pnl >= 0 ? '#00b894' : '#e74c3c' }
-        })),
-        label: {
-          show: true,
-          position: 'right',
-          formatter: (item: { dataIndex: number }) => {
-            const stat = data[item.dataIndex];
-            return `${stat.count}次 / ${stat.winRate.toFixed(0)}%`;
-          }
-        }
-      }
-    ]
-  });
-}
-
-function resizeChart() {
-  tagChart.value?.resize();
-}
 
 function openDetail(trade: Trade) {
   activeTrade.value = trade;
   detailVisible.value = true;
-}
-
-function toggleReason(id: number) {
-  const next = new Set(expandedIds.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  expandedIds.value = next;
-}
-
-function holdingDuration(trade: Trade) {
-  if (!trade.exitTime) return '持仓中';
-  const minutes = dayjs(trade.exitTime).diff(dayjs(trade.entryTime), 'minute');
-  if (minutes < 60) return `${minutes}分钟`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}小时${minutes % 60}分钟`;
-  return `${Math.floor(minutes / 1440)}天`;
-}
-
-function formatCurrency(value: number) {
-  return `${value >= 0 ? '+' : '-'}${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
 }
 
 function formatPrice(value: number) {
@@ -279,12 +178,30 @@ function formatNumber(value: number) {
   return value.toLocaleString('en-US', { maximumFractionDigits: 4 });
 }
 
-function formatCompact(value: number) {
-  return value.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+function formatPnlAmount(value: number) {
+  const prefix = value >= 0 ? '+' : '-';
+  return `${prefix}${Math.abs(value).toLocaleString('en-US', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1
+  })}`;
 }
 
 function formatDateTime(value: string) {
   return dayjs(value).format('YYYY-MM-DD HH:mm');
+}
+
+function shortSymbol(symbol: string) {
+  return symbol.split('/')[0];
+}
+
+function coverImage(trade: Trade) {
+  return trade.screenshots[0] || chartPlaceholder(trade);
+}
+
+function chartPlaceholder(trade: Trade) {
+  const up = trade.pnl >= 0;
+  const candle = up ? '%2300b894' : '%23e74c3c';
+  return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 480"><rect width="900" height="480" fill="%23d8d8d8"/><path d="M0 360 C120 260 160 310 250 210 S400 180 500 120 680 80 900 34" fill="none" stroke="%23333" stroke-width="4" opacity=".72"/><path d="M0 390 C140 330 250 360 350 260 S540 210 650 130 780 120 900 68" fill="none" stroke="%23777" stroke-width="2" opacity=".55"/><rect x="680" y="0" width="42" height="480" fill="%23bcbcbc" opacity=".8"/><line x1="0" y1="118" x2="900" y2="118" stroke="%23222" stroke-width="3"/><line x1="0" y1="255" x2="900" y2="255" stroke="%23333" stroke-width="2"/><g fill="${candle}"><rect x="150" y="246" width="16" height="74"/><rect x="320" y="164" width="16" height="92"/><rect x="510" y="110" width="16" height="108"/><rect x="760" y="70" width="16" height="86"/></g><g stroke="%23222" stroke-width="2"><line x1="158" y1="218" x2="158" y2="344"/><line x1="328" y1="130" x2="328" y2="280"/><line x1="518" y1="82" x2="518" y2="244"/><line x1="768" y1="42" x2="768" y2="184"/></g><text x="40" y="52" fill="%23333" font-family="Arial" font-size="22">${trade.symbol}</text></svg>`;
 }
 </script>
 
@@ -328,38 +245,71 @@ function formatDateTime(value: string) {
 
 .review-filter :deep(.el-card__body) {
   display: grid;
-  grid-template-columns: 280px repeat(3, minmax(150px, 1fr)) minmax(220px, 1.2fr);
+  grid-template-columns: 180px minmax(180px, 1fr) 150px minmax(220px, 1.2fr);
   gap: 10px;
 }
 
-.review-list {
+.gallery-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 24px 0;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: #ecebea;
+  color: #2f2f2f;
+  font-size: 22px;
+}
+
+.gallery-icon {
   display: grid;
-  gap: 12px;
+  place-items: center;
+  font-size: 22px;
 }
 
-.review-card {
-  padding: 18px;
-  border: 1px solid #e7e2da;
-  border-radius: 8px;
-  background: #fffdf9;
+.review-gallery {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.gallery-card {
+  overflow: hidden;
+  min-height: 238px;
+  border: 1px solid #dedbd7;
+  border-radius: 14px;
+  background: #ffffff;
   cursor: pointer;
+  box-shadow: 0 2px 8px rgba(31, 31, 31, 0.04);
 }
 
-.review-card:hover {
-  border-color: #cfc7bb;
+.gallery-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(31, 31, 31, 0.08);
 }
 
-.win-card {
-  background: linear-gradient(90deg, rgba(0, 184, 148, 0.1), rgba(255, 253, 249, 0.9) 34%);
+.chart-shot {
+  width: 100%;
+  height: 142px;
+  overflow: hidden;
+  background: #d7d7d7;
 }
 
-.loss-card {
-  background: linear-gradient(90deg, rgba(231, 76, 60, 0.1), rgba(255, 253, 249, 0.9) 34%);
+.chart-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(0.92);
 }
 
-.card-top,
-.price-row,
-.meta-grid,
+.gallery-body {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+
+.gallery-symbol,
+.gallery-meta,
 .tag-row,
 .dialog-tags {
   display: flex;
@@ -368,75 +318,49 @@ function formatDateTime(value: string) {
   flex-wrap: wrap;
 }
 
-.card-top {
-  justify-content: space-between;
-}
-
-.card-top > div:first-child {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.card-top strong {
-  font-size: 20px;
-}
-
-.pnl-block {
-  font-size: 24px;
-}
-
-.price-row {
-  margin-top: 14px;
-  color: #4c4741;
-  font-size: 16px;
-}
-
-.price-row b {
-  color: #a0968b;
-}
-
-.meta-grid {
-  margin-top: 12px;
-  color: #7a7167;
+.star {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #5f5f5f;
   font-size: 13px;
 }
 
-.reason {
-  margin: 14px 0 6px;
-  color: #3f3a35;
-  line-height: 1.65;
+.gallery-symbol strong {
+  font-size: 18px;
+  letter-spacing: 0;
 }
 
-.reason.collapsed {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+.gallery-meta {
+  justify-content: space-between;
 }
 
-.tag-row {
-  margin-top: 10px;
+.result-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.review-stats {
-  margin-top: 18px;
-  border: 1px solid #e7e2da;
-  border-radius: 8px;
-  background: #fffdf9;
+.result-profit {
+  color: #16885d;
+  background: #e8f6ee;
 }
 
-.section-heading span {
-  display: block;
-  font-weight: 760;
+.result-loss {
+  color: #b23b34;
+  background: #f8e9e7;
 }
 
-.section-heading small {
-  color: #8a8177;
-}
-
-.tag-chart {
-  height: 360px;
+.gallery-pnl {
+  font-size: 20px;
+  line-height: 1;
 }
 
 .detail-grid {
@@ -496,10 +420,25 @@ function formatDateTime(value: string) {
     grid-template-columns: 1fr;
   }
 
-  .review-title,
-  .card-top {
+  .review-gallery {
+    grid-template-columns: 1fr;
+  }
+
+  .review-title {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+@media (min-width: 961px) and (max-width: 1180px) {
+  .review-gallery {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1181px) and (max-width: 1460px) {
+  .review-gallery {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 </style>

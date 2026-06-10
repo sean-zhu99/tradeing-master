@@ -1,7 +1,10 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { ExchangeController } from '../controllers/exchangeController.js';
+import { MarketController } from '../controllers/marketController.js';
+import { Mt5Controller } from '../controllers/mt5Controller.js';
 import { StatsController } from '../controllers/statsController.js';
 import { TradeController, ValidationError } from '../controllers/tradeController.js';
+import { Mt5SyncError } from '../services/mt5SyncService.js';
 
 type AsyncRouteHandler = (req: Request, res: Response, next: NextFunction) => Promise<void>;
 
@@ -9,6 +12,8 @@ const router = Router();
 const tradeController = new TradeController();
 const statsController = new StatsController();
 const exchangeController = new ExchangeController();
+const marketController = new MarketController();
+const mt5Controller = new Mt5Controller();
 
 router.get('/trades', asyncHandler((req, res) => tradeController.list(req, res)));
 router.get('/trades/:id', asyncHandler((req, res) => tradeController.detail(req, res)));
@@ -23,6 +28,10 @@ router.get('/summary/tag-stats', asyncHandler((req, res) => statsController.tagS
 router.get('/exchange/balance', asyncHandler((req, res) => exchangeController.balance(req, res)));
 router.post('/sync/trigger', asyncHandler((req, res) => exchangeController.triggerSync(req, res)));
 
+router.get('/market/trades/:id/kline', asyncHandler((req, res) => marketController.tradeKline(req, res)));
+
+router.post('/mt5/sync', asyncHandler((req, res) => mt5Controller.sync(req, res)));
+
 router.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
   if (error instanceof ValidationError) {
     res.status(error.statusCode).json({ message: error.message });
@@ -31,6 +40,11 @@ router.use((error: Error, _req: Request, res: Response, _next: NextFunction) => 
 
   if (isDuplicateEntryError(error)) {
     res.status(409).json({ message: '交易所订单ID已存在' });
+    return;
+  }
+
+  if (error instanceof Mt5SyncError) {
+    res.status(error.statusCode).json({ message: error.message });
     return;
   }
 

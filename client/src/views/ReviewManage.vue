@@ -6,7 +6,7 @@
         <h1>交易复盘管理</h1>
       </div>
       <el-button type="primary" plain :loading="tradingStore.loading" @click="syncOrders">
-        同步交易所订单
+        同步 MT5 / 交易所订单
       </el-button>
     </header>
 
@@ -33,6 +33,9 @@
             </div>
             <div class="card-actions">
               <el-button plain @click="openReadonlyDialog(trade)">查看订单</el-button>
+              <el-button plain :loading="isGeneratingChart(trade.id)" @click="generateTradeChart(trade)">
+                生成K线截图
+              </el-button>
               <el-button type="primary" plain @click="openEditDialog(trade)">补充复盘</el-button>
             </div>
           </el-card>
@@ -42,7 +45,7 @@
       <el-tab-pane label="已平仓复盘" name="closed">
         <el-card class="manage-filter" shadow="never">
           <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" />
-          <el-select v-model="filters.symbols" multiple collapse-tags placeholder="交易对">
+          <el-select v-model="filters.symbols" multiple collapse-tags placeholder="品种">
             <el-option v-for="symbol in tradingStore.symbols" :key="symbol" :label="symbol" :value="symbol" />
           </el-select>
           <el-select v-model="filters.tags" multiple collapse-tags placeholder="标签">
@@ -84,6 +87,9 @@
             </div>
             <div class="card-actions">
               <el-button plain @click="openReadonlyDialog(trade)">查看详情</el-button>
+              <el-button plain :loading="isGeneratingChart(trade.id)" @click="generateTradeChart(trade)">
+                生成K线截图
+              </el-button>
               <el-button type="primary" plain @click="openEditDialog(trade)">补充复盘</el-button>
               <el-button type="danger" plain @click="confirmDelete(trade)">移除复盘</el-button>
             </div>
@@ -95,8 +101,8 @@
     <el-dialog v-model="formVisible" :title="formTitle" width="760px">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <div class="synced-order">
-          <div><span>交易所订单ID</span><b>{{ activeTrade?.tradeId || '-' }}</b></div>
-          <div><span>交易对</span><b>{{ form.symbol }}</b></div>
+          <div><span>订单ID</span><b>{{ activeTrade?.tradeId || '-' }}</b></div>
+          <div><span>品种</span><b>{{ form.symbol }}</b></div>
           <div><span>方向</span><b>{{ form.direction === 'long' ? '做多' : '做空' }}</b></div>
           <div><span>入场价</span><b>{{ formatPrice(form.entryPrice) }}</b></div>
           <div><span>出场价</span><b>{{ form.exitPrice ? formatPrice(form.exitPrice) : '持仓中' }}</b></div>
@@ -104,7 +110,7 @@
           <div><span>入场时间</span><b>{{ form.entryTime || '-' }}</b></div>
           <div><span>出场时间</span><b>{{ form.exitTime || '-' }}</b></div>
         </div>
-        <p class="form-hint">订单价格、数量和时间来自交易所同步。这里仅补充复盘内容，用来总结这笔交易的问题和经验。</p>
+        <p class="form-hint">订单价格、手数和时间来自 MT5 / 交易所同步。这里仅补充复盘内容，用来总结这笔交易的问题和经验。</p>
         <el-form-item label="进场理由" prop="entryReason"><el-input v-model="form.entryReason" type="textarea" :rows="4" /></el-form-item>
         <el-form-item label="出场理由"><el-input v-model="form.exitReason" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.notes" type="textarea" :rows="3" /></el-form-item>
@@ -115,12 +121,27 @@
           <div class="screenshot-input">
             <el-input v-model="screenshotUrl" placeholder="粘贴截图 URL" />
             <el-button @click="addScreenshotUrl">添加</el-button>
+            <el-button
+              v-if="activeTrade"
+              plain
+              :loading="isGeneratingChart(activeTrade.id)"
+              @click="generateTradeChart(activeTrade)"
+            >
+              生成K线截图
+            </el-button>
             <el-upload :auto-upload="false" :show-file-list="false" :on-change="addScreenshotFile">
               <el-button plain>上传</el-button>
             </el-upload>
           </div>
           <div class="screenshot-list">
-            <el-tag v-for="url in form.screenshots" :key="url" closable @close="removeScreenshot(url)">{{ url }}</el-tag>
+            <el-tag
+              v-for="(url, index) in form.screenshots"
+              :key="url"
+              closable
+              @close="removeScreenshot(url)"
+            >
+              截图 {{ index + 1 }}
+            </el-tag>
           </div>
         </el-form-item>
         <el-form-item label="自我评分"><el-rate v-model="form.rating" /></el-form-item>
@@ -134,7 +155,7 @@
     <el-dialog v-model="detailVisible" title="交易详情" width="760px">
       <template v-if="activeTrade">
         <div class="detail-grid">
-          <div><span>交易对</span><b>{{ activeTrade.symbol }}</b></div>
+          <div><span>品种</span><b>{{ activeTrade.symbol }}</b></div>
           <div><span>方向</span><b>{{ activeTrade.direction === 'long' ? '做多' : '做空' }}</b></div>
           <div><span>入场价</span><b>{{ formatPrice(activeTrade.entryPrice) }}</b></div>
           <div><span>出场价</span><b>{{ activeTrade.exitPrice ? formatPrice(activeTrade.exitPrice) : '-' }}</b></div>
@@ -150,21 +171,38 @@
         <p class="detail-text">{{ activeTrade.exitReason || '暂无' }}</p>
         <h3>备注</h3>
         <p class="detail-text">{{ activeTrade.notes || '暂无' }}</p>
+        <h3>截图</h3>
+        <div class="detail-screenshots">
+          <el-image
+            v-for="url in activeTrade.screenshots"
+            :key="url"
+            :src="url"
+            fit="cover"
+            :preview-src-list="activeTrade.screenshots"
+            preview-teleported
+          />
+          <el-empty v-if="!activeTrade.screenshots.length" description="暂无截图" :image-size="80" />
+        </div>
         <div class="dialog-tags">
           <el-tag v-for="tag in activeTrade.tags" :key="tag" effect="plain">{{ tag }}</el-tag>
           <el-rate :model-value="activeTrade.rating || 0" disabled />
         </div>
       </template>
     </el-dialog>
+
+    <div class="chart-exporter" aria-hidden="true">
+      <TradeKlineChart ref="klineChartRef" :trade="klineTrade" :candles="klineCandles" />
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
 import dayjs from 'dayjs';
+import TradeKlineChart from '@/components/charts/TradeKlineChart.vue';
 import { useTradingStore } from '@/stores/trading';
-import type { Trade, TradeDirection, TradeStatus, TradeUpdatePayload } from '@/types';
+import type { KlineCandle, Trade, TradeDirection, TradeStatus, TradeUpdatePayload } from '@/types';
 
 const tradingStore = useTradingStore();
 const activeTab = ref<'open' | 'closed'>('open');
@@ -175,6 +213,10 @@ const editingId = ref<number | null>(null);
 const activeTrade = ref<Trade | null>(null);
 const formRef = ref<FormInstance>();
 const screenshotUrl = ref('');
+const generatingChartIds = ref(new Set<number>());
+const klineChartRef = ref<InstanceType<typeof TradeKlineChart>>();
+const klineTrade = ref<Trade | null>(null);
+const klineCandles = ref<KlineCandle[]>([]);
 
 const filters = reactive({
   dateRange: [] as string[],
@@ -283,7 +325,7 @@ async function updateRating(trade: Trade, rating: number) {
 }
 
 async function confirmDelete(trade: Trade) {
-  await ElMessageBox.confirm('确定要移除这笔复盘记录吗？此操作不会删除交易所订单，但会从当前复盘列表移除。', '移除确认', {
+  await ElMessageBox.confirm('确定要移除这笔复盘记录吗？此操作不会删除 MT5 / 交易所源订单，但会从当前复盘列表移除。', '移除确认', {
     type: 'warning',
     confirmButtonText: '移除',
     cancelButtonText: '取消'
@@ -303,8 +345,47 @@ async function syncOrders() {
     ElMessage.success('订单同步完成');
   } catch {
     await tradingStore.loadTrades(1, 100);
-    ElMessage.warning('当前使用案例订单预览，真实交易所同步暂不可用');
+    ElMessage.warning('当前使用 MT5 报表与本地订单预览，远端交易所同步暂不可用');
   }
+}
+
+async function generateTradeChart(trade: Trade) {
+  if (generatingChartIds.value.has(trade.id)) return;
+  const nextGeneratingIds = new Set(generatingChartIds.value);
+  nextGeneratingIds.add(trade.id);
+  generatingChartIds.value = nextGeneratingIds;
+
+  try {
+    const klineData = await tradingStore.loadTradeKline(trade.id);
+    klineTrade.value = klineData.trade;
+    klineCandles.value = klineData.candles;
+    await nextTick();
+    const imageUrl = await klineChartRef.value?.generateImage();
+    if (!imageUrl) throw new Error('K线截图生成失败');
+
+    const screenshots = [imageUrl, ...trade.screenshots.filter((url) => url !== imageUrl)];
+    await tradingStore.updateTrade(trade.id, { screenshots });
+
+    if (activeTrade.value?.id === trade.id) {
+      activeTrade.value = { ...activeTrade.value, screenshots };
+    }
+
+    if (editingId.value === trade.id) {
+      form.screenshots = screenshots;
+    }
+
+    ElMessage.success('K线截图已生成并保存到订单');
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '生成K线截图失败');
+  } finally {
+    const doneGeneratingIds = new Set(generatingChartIds.value);
+    doneGeneratingIds.delete(trade.id);
+    generatingChartIds.value = doneGeneratingIds;
+  }
+}
+
+function isGeneratingChart(id: number) {
+  return generatingChartIds.value.has(id);
 }
 
 function buildPayload(): TradeUpdatePayload {
@@ -351,7 +432,7 @@ function truncate(value: string) {
 }
 
 function formatCurrency(value: number) {
-  return `${value >= 0 ? '+' : '-'}${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+  return `${value >= 0 ? '+' : '-'}${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
 }
 
 function formatPrice(value: number) {
@@ -565,11 +646,35 @@ function formatDateTime(value: string) {
   line-height: 1.7;
 }
 
+.detail-screenshots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.detail-screenshots :deep(.el-image) {
+  height: 96px;
+  overflow: hidden;
+  border: 1px solid #e7e2da;
+  border-radius: 8px;
+}
+
 .dialog-tags {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.chart-exporter {
+  position: fixed;
+  left: -2000px;
+  top: 0;
+  width: 960px;
+  height: 540px;
+  pointer-events: none;
+  opacity: 0;
 }
 
 .profit-value {

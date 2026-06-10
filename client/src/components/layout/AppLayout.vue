@@ -40,7 +40,7 @@ import { computed, markRaw } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
-import { DataBoard, Notebook, Tickets, TrendCharts } from '@element-plus/icons-vue';
+import { DataBoard, Document, Notebook, Tickets, TrendCharts } from '@element-plus/icons-vue';
 
 const route = useRoute();
 dayjs.locale('zh-cn');
@@ -49,6 +49,7 @@ const navItems = [
   { path: '/dashboard', label: '仪表盘', icon: markRaw(DataBoard) },
   { path: '/trades', label: '交易记录', icon: markRaw(Tickets) },
   { path: '/pnl-analysis', label: '盈亏分析', icon: markRaw(TrendCharts) },
+  { path: '/mt5-report', label: 'MT5报表', icon: markRaw(Document) },
   { path: '/review', label: '交易复盘', icon: markRaw(Notebook) }
 ];
 

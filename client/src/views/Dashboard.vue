@@ -4,11 +4,11 @@
       <div>
         <span class="eyebrow">TRADE JOURNAL + ANALYTICS</span>
         <h2>Trading Master</h2>
-        <p>外汇与加密货币交易记录、分析与复盘工作台</p>
+        <p>MT5 与交易所订单的合并记录、分析与复盘工作台</p>
       </div>
       <div class="hero-actions">
-        <el-button :icon="Refresh" plain @click="tradingStore.triggerSync">同步数据</el-button>
-        <el-button type="primary" :icon="Plus" @click="router.push('/trades')">新增交易</el-button>
+        <el-button :icon="Refresh" plain @click="tradingStore.triggerSync">同步数据源</el-button>
+        <el-button type="primary" :icon="Plus" @click="router.push('/trades')">查看订单</el-button>
       </div>
     </div>
 
@@ -66,7 +66,7 @@
         <div class="action-list">
           <button @click="router.push('/trades')">
             <el-icon><Tickets /></el-icon>
-            <span>记录交易</span>
+            <span>查看订单</span>
           </button>
           <button @click="router.push('/review')">
             <el-icon><Notebook /></el-icon>
@@ -117,8 +117,8 @@
         <template #header>
           <div class="panel-header">
             <div>
-              <span>Pair Performance</span>
-              <small>交易对盈亏分布</small>
+              <span>Symbol Performance</span>
+              <small>品种盈亏分布</small>
             </div>
             <el-segmented v-model="distributionMode" :options="distributionOptions" size="small" />
           </div>
@@ -148,7 +148,7 @@
               {{ formatDateTime(row.exitTime || row.entryTime) }}
             </template>
           </el-table-column>
-          <el-table-column prop="symbol" label="交易对" min-width="112" />
+          <el-table-column prop="symbol" label="品种" min-width="112" />
           <el-table-column label="方向" min-width="86">
             <template #default="{ row }">
               <el-tag :type="row.direction === 'long' ? 'success' : 'danger'" effect="plain">
@@ -176,7 +176,7 @@
         <div class="start-list">
           <div>
             <b>01</b>
-            <span>记录入场、出场和截图</span>
+            <span>核对开仓、平仓和截图</span>
           </div>
           <div>
             <b>02</b>
@@ -184,7 +184,7 @@
           </div>
           <div>
             <b>03</b>
-            <span>按交易对和标签复盘表现</span>
+            <span>按品种和标签复盘表现</span>
           </div>
         </div>
       </el-card>
@@ -220,7 +220,7 @@ const router = useRouter();
 const tradingStore = useTradingStore();
 const pnlChartRef = ref<HTMLDivElement>();
 const distributionChartRef = ref<HTMLDivElement>();
-const range = ref<RangeValue>('30d');
+const range = ref<RangeValue>('all');
 const distributionMode = ref<DistributionMode>('profit');
 const pnlChart = ref<ECharts>();
 const distributionChart = ref<ECharts>();
@@ -238,7 +238,7 @@ const distributionOptions = [
 ];
 
 const navigationTiles = [
-  { label: 'Trading Journal', caption: '交易记录', path: '/trades', icon: markRaw(Tickets) },
+  { label: 'Orders', caption: '订单记录', path: '/trades', icon: markRaw(Tickets) },
   { label: 'Analytics', caption: '盈亏分析', path: '/pnl-analysis', icon: markRaw(TrendCharts) },
   { label: 'Calendar', caption: '每日汇总', path: '/calendar', icon: markRaw(Calendar) },
   { label: 'Review', caption: '交易复盘', path: '/review', icon: markRaw(Notebook) }
@@ -402,7 +402,7 @@ function renderPnlChart() {
       },
       yAxis: {
         type: 'value',
-        name: 'USDT',
+        name: 'USD',
         axisLabel: {
           color: '#6b7280',
           formatter: (value: number) => compactNumber(value)
@@ -493,7 +493,7 @@ function formatCurrency(value: number) {
   return `${value >= 0 ? '+' : '-'}${Math.abs(value).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
-  })} USDT`;
+  })} USD`;
 }
 
 function formatNumber(value: number) {

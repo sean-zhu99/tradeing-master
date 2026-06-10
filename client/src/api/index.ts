@@ -11,6 +11,7 @@ import type {
   TagStats,
   Trade,
   TradeFilter,
+  TradeKlineData,
   TradePayload,
   TradeUpdatePayload
 } from '@/types';
@@ -182,6 +183,19 @@ export async function fetchBalance(): Promise<Balance> {
  */
 export async function triggerSync(): Promise<SyncResult> {
   const response = await apiClient.post<SyncResult, ApiEnvelope<SyncResult>>('/sync/trigger');
+  return response.data;
+}
+
+/**
+ * Fetches the K-line dataset needed to render a review screenshot for one trade.
+ *
+ * @param id - Trade primary key.
+ * @returns Trade detail and related OHLCV candles.
+ */
+export async function fetchTradeKline(id: number): Promise<TradeKlineData> {
+  const response = await apiClient.get<TradeKlineData, ApiEnvelope<TradeKlineData>>(
+    `/market/trades/${id}/kline`
+  );
   return response.data;
 }
 

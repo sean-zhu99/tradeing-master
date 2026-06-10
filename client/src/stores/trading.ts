@@ -7,6 +7,7 @@ import {
   fetchDailySummary,
   fetchOverallStats,
   fetchTagStats,
+  fetchTradeKline,
   fetchTradeDetail,
   fetchTrades,
   triggerSync as triggerSyncApi,
@@ -20,10 +21,13 @@ import type {
   TagStats,
   Trade,
   TradeFilter,
+  TradeKlineData,
   TradePayload,
   TradeUpdatePayload
 } from '@/types';
-import { demoTrades } from '@/data/demoTrades';
+import { mt5DemoTrades } from '@/data/mt5DemoTrades';
+
+const mt5Trades = mt5DemoTrades;
 
 const defaultPagination: Pagination = {
   page: 1,
@@ -45,16 +49,19 @@ const defaultOverallStats: OverallStats = {
 };
 
 const demoBalance: Balance = {
-  accountType: 'Demo Portfolio',
+  accountType: 'Exchange API',
   balances: [
-    { asset: 'USDT', free: '48520.80', locked: '0' },
-    { asset: 'BTC', free: '0.218', locked: '0' },
-    { asset: 'ETH', free: '2.4', locked: '0' }
+    { asset: 'USD', free: '0', locked: '0' },
+    { asset: 'USDT', free: '0', locked: '0' },
+    { asset: 'BTC', free: '0', locked: '0' },
+    { asset: 'ETH', free: '0', locked: '0' }
   ]
 };
 
 export const useTradingStore = defineStore('trading', () => {
   const trades = ref<Trade[]>([]);
+  const exchangeTrades = ref<Trade[]>([]);
+  const mt5ReportTrades = ref<Trade[]>([...mt5Trades]);
   const selectedTrade = ref<Trade | null>(null);
   const filters = ref<TradeFilter>({});
   const pagination = ref<Pagination>({ ...defaultPagination });
@@ -100,19 +107,29 @@ export const useTradingStore = defineStore('trading', () => {
           pageSize
         });
 
-        trades.value = result.data.length ? result.data : [...demoTrades];
-        pagination.value = result.data.length
-          ? result.pagination
-          : { page: 1, pageSize: demoTrades.length, total: demoTrades.length, totalPages: 1 };
+        exchangeTrades.value = result.data;
       } catch {
-        trades.value = [...demoTrades];
-        pagination.value = { page: 1, pageSize: demoTrades.length, total: demoTrades.length, totalPages: 1 };
+        exchangeTrades.value = [];
       }
+
+      trades.value = mergeTrades(exchangeTrades.value, mt5ReportTrades.value);
+      pagination.value = {
+        page,
+        pageSize,
+        total: trades.value.length,
+        totalPages: Math.max(1, Math.ceil(trades.value.length / pageSize))
+      };
     });
   }
 
   async function loadTradeDetail(id: number) {
     await withRequestState(async () => {
+      const localTrade = trades.value.find((trade) => trade.id === id);
+      if (localTrade) {
+        selectedTrade.value = localTrade;
+        return;
+      }
+
       selectedTrade.value = await fetchTradeDetail(id);
     });
   }
@@ -167,6 +184,7 @@ export const useTradingStore = defineStore('trading', () => {
 
   async function loadDailySummary(page = dailyPagination.value.page) {
     await withRequestState(async () => {
+      let exchangeDailySummary: DailySummary[] = [];
       try {
         const result = await fetchDailySummary({
           startDate: filters.value.startDate,
@@ -174,45 +192,41 @@ export const useTradingStore = defineStore('trading', () => {
           page,
           pageSize: dailyPagination.value.pageSize
         });
-
-        dailySummary.value = result.data.length ? result.data : buildDailySummary(trades.value);
-        dailyPagination.value = result.data.length
-          ? result.pagination
-          : { page: 1, pageSize: dailySummary.value.length, total: dailySummary.value.length, totalPages: 1 };
+        exchangeDailySummary = result.data;
       } catch {
-        dailySummary.value = buildDailySummary(trades.value.length ? trades.value : demoTrades);
-        dailyPagination.value = { page: 1, pageSize: dailySummary.value.length, total: dailySummary.value.length, totalPages: 1 };
+        exchangeDailySummary = [];
       }
+
+      dailySummary.value = buildDailySummary(trades.value.length ? trades.value : mergeTrades(exchangeTrades.value, mt5ReportTrades.value));
+      if (!trades.value.length && exchangeDailySummary.length) dailySummary.value = exchangeDailySummary;
+      dailyPagination.value = { page: 1, pageSize: dailySummary.value.length, total: dailySummary.value.length, totalPages: 1 };
     });
   }
 
   async function loadOverallStats() {
     await withRequestState(async () => {
       try {
-        const data = await fetchOverallStats();
-        overallStats.value = data.tradeCount ? data : buildOverallStats(trades.value);
+        await fetchOverallStats();
       } catch {
-        overallStats.value = buildOverallStats(trades.value.length ? trades.value : demoTrades);
+        // Exchange stats default to zero until the API/database is connected.
       }
+      overallStats.value = buildOverallStats(trades.value.length ? trades.value : mergeTrades(exchangeTrades.value, mt5ReportTrades.value));
     });
   }
 
   async function loadTagStats(page = tagPagination.value.page) {
     await withRequestState(async () => {
       try {
-        const result = await fetchTagStats({
+        await fetchTagStats({
           page,
           pageSize: tagPagination.value.pageSize
         });
-
-        tagStats.value = result.data.length ? result.data : buildTagStats(trades.value);
-        tagPagination.value = result.data.length
-          ? result.pagination
-          : { page: 1, pageSize: tagStats.value.length, total: tagStats.value.length, totalPages: 1 };
       } catch {
-        tagStats.value = buildTagStats(trades.value.length ? trades.value : demoTrades);
-        tagPagination.value = { page: 1, pageSize: tagStats.value.length, total: tagStats.value.length, totalPages: 1 };
+        // Exchange tag stats default to zero until the API/database is connected.
       }
+
+      tagStats.value = buildTagStats(trades.value.length ? trades.value : mergeTrades(exchangeTrades.value, mt5ReportTrades.value));
+      tagPagination.value = { page: 1, pageSize: tagStats.value.length, total: tagStats.value.length, totalPages: 1 };
     });
   }
 
@@ -231,10 +245,24 @@ export const useTradingStore = defineStore('trading', () => {
       try {
         await triggerSyncApi();
       } catch {
-        trades.value = trades.value.length ? trades.value : [...demoTrades];
+        exchangeTrades.value = [];
       }
       await Promise.all([loadTrades(1), loadDailySummary(1), loadOverallStats(), loadTagStats(1)]);
     });
+  }
+
+  async function loadTradeKline(id: number): Promise<TradeKlineData> {
+    const trade = trades.value.find((item) => item.id === id);
+
+    try {
+      return await fetchTradeKline(id);
+    } catch {
+      if (!trade) throw new Error('交易记录不存在，无法生成K线图');
+      return {
+        trade,
+        candles: buildDemoCandles(trade)
+      };
+    }
   }
 
   function updateFilters(nextFilters: Partial<TradeFilter>) {
@@ -366,8 +394,53 @@ export const useTradingStore = defineStore('trading', () => {
       .sort((a, b) => Math.abs(b.totalPnl) - Math.abs(a.totalPnl));
   }
 
+  function mergeTrades(exchangeSource: Trade[], mt5Source: Trade[]) {
+    const map = new Map<string, Trade>();
+
+    for (const trade of [...exchangeSource, ...mt5Source]) {
+      map.set(trade.tradeId || `${trade.symbol}-${trade.id}`, trade);
+    }
+
+    return Array.from(map.values()).sort((a, b) => (b.exitTime || b.entryTime).localeCompare(a.exitTime || a.entryTime));
+  }
+
+  function buildDemoCandles(trade: Trade) {
+    const candleCount = 64;
+    const entryIndex = Math.floor(candleCount * 0.38);
+    const exitIndex = Math.floor(candleCount * 0.72);
+    const exitPrice = trade.exitPrice || trade.entryPrice;
+    const endTime = new Date(trade.exitTime || trade.entryTime).getTime();
+    const startTime = endTime - (candleCount - 1) * 15 * 60 * 1000;
+    const seed = Array.from(trade.symbol).reduce((sum, char) => sum + char.charCodeAt(0), trade.id);
+    const trend = (exitPrice - trade.entryPrice) / Math.max(1, exitIndex - entryIndex);
+    let lastClose = trade.entryPrice - trend * entryIndex;
+
+    return Array.from({ length: candleCount }, (_, index) => {
+      const wave = Math.sin((index + seed) / 3.2) * trade.entryPrice * 0.003;
+      const drift = trend * index;
+      const anchor = trade.entryPrice - trend * entryIndex + drift + wave;
+      const open = index === 0 ? anchor : lastClose;
+      const close = index === entryIndex ? trade.entryPrice : index === exitIndex ? exitPrice : anchor;
+      const spread = Math.max(Math.abs(close - open), trade.entryPrice * 0.0018);
+      const high = Math.max(open, close) + spread * (0.7 + ((seed + index) % 5) / 10);
+      const low = Math.min(open, close) - spread * (0.7 + ((seed + index * 2) % 5) / 10);
+      lastClose = close;
+
+      return {
+        time: new Date(startTime + index * 15 * 60 * 1000).toISOString(),
+        open: Number(open.toFixed(8)),
+        high: Number(high.toFixed(8)),
+        low: Number(low.toFixed(8)),
+        close: Number(close.toFixed(8)),
+        volume: Number((100 + ((seed + index * 13) % 90)).toFixed(2))
+      };
+    });
+  }
+
   return {
     trades,
+    exchangeTrades,
+    mt5ReportTrades,
     selectedTrade,
     filters,
     pagination,
@@ -395,6 +468,7 @@ export const useTradingStore = defineStore('trading', () => {
     loadTagStats,
     loadBalance,
     triggerSync,
+    loadTradeKline,
     updateFilters,
     resetFilters,
     setPage,
