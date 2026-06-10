@@ -115,7 +115,7 @@ function normalizeMt5Trade(raw: Mt5TradePayload): CreateTradeInput & { tradeId: 
   const fee = numberValue(raw.fee ?? 0, 'fee');
   const pnl = numberValue(raw.pnl ?? 0, 'pnl');
   const notes = raw.notes === undefined || raw.notes === null ? null : String(raw.notes);
-  const pnlPercentage = calculatePnlPercentage(direction, entryPrice, exitPrice, Number((pnl - fee).toFixed(8)));
+  const pnlPercentage = calculatePnlPercentage(direction, entryPrice, exitPrice, pnl);
 
   return {
     tradeId,

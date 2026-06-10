@@ -84,7 +84,7 @@ void CollectOpenPositions(TradeRecord &records[])
       record.leverage = 1;
       record.entryTime = (datetime)PositionGetInteger(POSITION_TIME);
       record.exitTime = 0;
-      record.pnl = PositionGetDouble(POSITION_PROFIT);
+      record.pnl = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       record.fee = MathAbs(PositionGetDouble(POSITION_SWAP));
       record.status = "open";
 
@@ -109,14 +109,13 @@ void CollectClosedTrades(TradeRecord &records[])
       if(dealTicket == 0)
          continue;
 
-      long dealType = HistoryDealGetInteger(dealTicket, DEAL_TYPE);
-      if(dealType != DEAL_TYPE_BUY && dealType != DEAL_TYPE_SELL)
-         continue;
-
       long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
       long positionId = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
       if(positionId <= 0)
          continue;
+
+      long dealType = HistoryDealGetInteger(dealTicket, DEAL_TYPE);
+      bool isTradeDeal = (dealType == DEAL_TYPE_BUY || dealType == DEAL_TYPE_SELL);
 
       int index = FindRecord(records, "MT5-" + IntegerToString(positionId));
       if(index < 0)
@@ -124,7 +123,7 @@ void CollectClosedTrades(TradeRecord &records[])
          TradeRecord record;
          record.tradeId = "MT5-" + IntegerToString(positionId);
          record.symbol = HistoryDealGetString(dealTicket, DEAL_SYMBOL);
-         record.direction = dealType == DEAL_TYPE_BUY ? "long" : "short";
+         record.direction = dealType == DEAL_TYPE_SELL ? "short" : "long";
          record.entryPrice = 0;
          record.exitPrice = 0;
          record.quantity = 0;
@@ -141,6 +140,19 @@ void CollectClosedTrades(TradeRecord &records[])
       double price = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
       double volume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
       datetime dealTime = (datetime)HistoryDealGetInteger(dealTicket, DEAL_TIME);
+      double commission = HistoryDealGetDouble(dealTicket, DEAL_COMMISSION);
+      double swap = HistoryDealGetDouble(dealTicket, DEAL_SWAP);
+
+      if(commission != 0)
+         records[index].fee += MathAbs(commission);
+
+      if(swap != 0)
+         records[index].fee += MathAbs(swap);
+
+      records[index].pnl += commission + swap;
+
+      if(!isTradeDeal)
+         continue;
 
       if(entryType == DEAL_ENTRY_IN)
       {
@@ -156,15 +168,16 @@ void CollectClosedTrades(TradeRecord &records[])
          if(dealTime > records[index].exitTime)
             records[index].exitTime = dealTime;
          records[index].pnl += HistoryDealGetDouble(dealTicket, DEAL_PROFIT);
-         records[index].pnl += HistoryDealGetDouble(dealTicket, DEAL_SWAP);
-         records[index].fee += MathAbs(HistoryDealGetDouble(dealTicket, DEAL_COMMISSION));
       }
    }
 
    for(int i = ArraySize(records) - 1; i >= 0; i--)
    {
       if(records[i].status == "closed" && (records[i].entryTime == 0 || records[i].exitTime == 0 || records[i].entryPrice <= 0))
+      {
          RemoveRecord(records, i);
+         continue;
+      }
    }
 }
 

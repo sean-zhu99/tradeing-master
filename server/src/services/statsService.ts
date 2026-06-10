@@ -76,10 +76,10 @@ export class StatsService {
        FROM (
          SELECT
            DATE(COALESCE(exit_time, entry_time)) AS date,
-           COALESCE(SUM(pnl - fee), 0) AS total_pnl,
+           COALESCE(SUM(pnl), 0) AS total_pnl,
            COUNT(*) AS trade_count,
-           SUM(CASE WHEN pnl - fee > 0 THEN 1 ELSE 0 END) AS win_count,
-           SUM(CASE WHEN pnl - fee < 0 THEN 1 ELSE 0 END) AS loss_count,
+           SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS win_count,
+           SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) AS loss_count,
            COALESCE(SUM(fee), 0) AS total_fee
          FROM trades
          WHERE status = 'closed'
@@ -119,13 +119,13 @@ export class StatsService {
   async getOverallStats(): Promise<OverallStats> {
     const [rows] = await dbPool.query<OverallStatsRow[]>(
       `SELECT
-         COALESCE(SUM(pnl - fee), 0) AS total_pnl,
+         COALESCE(SUM(pnl), 0) AS total_pnl,
          COALESCE(SUM(fee), 0) AS total_fee,
          COUNT(*) AS trade_count,
-         SUM(CASE WHEN pnl - fee > 0 THEN 1 ELSE 0 END) AS win_count,
-         SUM(CASE WHEN pnl - fee < 0 THEN 1 ELSE 0 END) AS loss_count,
-         COALESCE(SUM(CASE WHEN pnl - fee > 0 THEN pnl - fee ELSE 0 END), 0) AS gross_profit,
-         COALESCE(ABS(SUM(CASE WHEN pnl - fee < 0 THEN pnl - fee ELSE 0 END)), 0) AS gross_loss,
+         SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS win_count,
+         SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) AS loss_count,
+         COALESCE(SUM(CASE WHEN pnl > 0 THEN pnl ELSE 0 END), 0) AS gross_profit,
+         COALESCE(ABS(SUM(CASE WHEN pnl < 0 THEN pnl ELSE 0 END)), 0) AS gross_loss,
          AVG(TIMESTAMPDIFF(MINUTE, entry_time, exit_time)) AS average_holding_minutes
        FROM trades
        WHERE status = 'closed'`
@@ -203,8 +203,8 @@ export class StatsService {
   }
 
   private async calculateMaxDrawdown(): Promise<number> {
-    const [rows] = await dbPool.query<(RowDataPacket & { net_pnl: string | number })[]>(
-      `SELECT pnl - fee AS net_pnl
+    const [rows] = await dbPool.query<(RowDataPacket & { pnl: string | number })[]>(
+      `SELECT pnl
        FROM trades
        WHERE status = 'closed'
        ORDER BY COALESCE(exit_time, entry_time), id`
@@ -215,7 +215,7 @@ export class StatsService {
     let maxDrawdown = 0;
 
     for (const row of rows) {
-      equity += Number(row.net_pnl);
+      equity += Number(row.pnl);
       peak = Math.max(peak, equity);
       maxDrawdown = Math.max(maxDrawdown, peak - equity);
     }
