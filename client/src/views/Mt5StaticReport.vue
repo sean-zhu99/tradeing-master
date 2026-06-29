@@ -2,14 +2,16 @@
   <section class="mt5-page">
     <header class="report-hero">
       <div>
-        <span>MT5 Static Report</span>
-        <h1>MT5 导出交易报表</h1>
+        <span>MT5 Report</span>
+        <h1>MT5 交易报表</h1>
         <p>
-          账户 {{ mt5ReportMeta.account }} · {{ mt5ReportMeta.server }} ·
-          {{ mt5ReportMeta.periodLabel }}
+          MT5 自动同步订单 · {{ periodLabel }}
         </p>
       </div>
-      <el-tag effect="plain" round>{{ mt5ReportTrades.length }} 笔交易</el-tag>
+      <div class="hero-tools">
+        <el-segmented v-model="rangeDays" :options="rangeOptions" />
+        <el-tag effect="plain" round>{{ filteredTrades.length }} 笔交易</el-tag>
+      </div>
     </header>
 
     <div class="metric-grid">
@@ -52,7 +54,7 @@
         <template #header>
           <div class="panel-title">
             <strong>报表摘要</strong>
-            <span>{{ mt5ReportMeta.sourceFile }}</span>
+            <span>来自后端同步数据</span>
           </div>
         </template>
         <div class="summary-list">
@@ -68,11 +70,11 @@
           </div>
           <div>
             <span>最大单笔盈利</span>
-            <b class="profit-value">{{ formatCurrency(stats.bestTrade.netPnl) }}</b>
+            <b class="profit-value">{{ formatCurrency(stats.bestTrade?.pnl || 0) }}</b>
           </div>
           <div>
             <span>最大单笔亏损</span>
-            <b class="loss-value">{{ formatCurrency(stats.worstTrade.netPnl) }}</b>
+            <b class="loss-value">{{ formatCurrency(stats.worstTrade?.pnl || 0) }}</b>
           </div>
         </div>
       </el-card>
@@ -86,7 +88,7 @@
         </div>
       </template>
 
-      <el-table :data="recentTrades" stripe class="recent-table">
+      <el-table v-loading="loading" :data="recentTrades" stripe class="recent-table">
         <el-table-column prop="exitTime" label="平仓时间" min-width="150">
           <template #default="{ row }">{{ formatDateTime(row.exitTime) }}</template>
         </el-table-column>
@@ -103,11 +105,11 @@
             {{ formatPrice(row.entryPrice) }} → {{ formatPrice(row.exitPrice) }}
           </template>
         </el-table-column>
-        <el-table-column prop="volume" label="手数" width="90" />
-        <el-table-column prop="netPnl" label="净盈亏" width="120" align="right">
+        <el-table-column prop="quantity" label="手数" width="90" />
+        <el-table-column prop="pnl" label="净盈亏" width="120" align="right">
           <template #default="{ row }">
-            <span :class="row.netPnl >= 0 ? 'profit-value' : 'loss-value'">
-              {{ formatCurrency(row.netPnl) }}
+            <span :class="row.pnl >= 0 ? 'profit-value' : 'loss-value'">
+              {{ formatCurrency(row.pnl) }}
             </span>
           </template>
         </el-table-column>
@@ -118,12 +120,12 @@
       <template #header>
         <div class="panel-title">
           <strong>完整交易明细</strong>
-          <span>静态解析自 MT5 导出文件</span>
+          <span>按平仓时间倒序</span>
         </div>
       </template>
 
-      <el-table :data="pagedTrades" stripe class="detail-table">
-        <el-table-column prop="positionId" label="持仓号" width="110" />
+      <el-table v-loading="loading" :data="pagedTrades" stripe class="detail-table">
+        <el-table-column prop="tradeId" label="订单ID" width="130" />
         <el-table-column prop="entryTime" label="开仓时间" min-width="150">
           <template #default="{ row }">{{ formatDateTime(row.entryTime) }}</template>
         </el-table-column>
@@ -134,7 +136,7 @@
         <el-table-column prop="direction" label="方向" width="90">
           <template #default="{ row }">{{ row.direction === 'long' ? '多' : '空' }}</template>
         </el-table-column>
-        <el-table-column prop="volume" label="手数" width="80" />
+        <el-table-column prop="quantity" label="手数" width="80" />
         <el-table-column label="开仓价" width="110" align="right">
           <template #default="{ row }">{{ formatPrice(row.entryPrice) }}</template>
         </el-table-column>
@@ -146,8 +148,8 @@
         </el-table-column>
         <el-table-column label="净盈亏" width="120" align="right">
           <template #default="{ row }">
-            <span :class="row.netPnl >= 0 ? 'profit-value' : 'loss-value'">
-              {{ formatCurrency(row.netPnl) }}
+            <span :class="row.pnl >= 0 ? 'profit-value' : 'loss-value'">
+              {{ formatCurrency(row.pnl) }}
             </span>
           </template>
         </el-table-column>
@@ -166,20 +168,37 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as echarts from 'echarts';
 import type { ECharts } from 'echarts';
-import { mt5ReportMeta, mt5ReportTrades, type Mt5StaticTrade } from '@/data/mt5ReportTrades';
+import dayjs from 'dayjs';
+import { ElMessage } from 'element-plus';
+import { fetchTrades } from '@/api';
+import type { Trade } from '@/types';
 
 const dailyChartRef = ref<HTMLDivElement>();
 const page = ref(1);
 const pageSize = 20;
+const loading = ref(false);
+const allTrades = ref<Trade[]>([]);
+const rangeDays = ref(30);
+const rangeOptions = [
+  { label: '近30天', value: 30 },
+  { label: '近90天', value: 90 },
+  { label: '近180天', value: 180 }
+];
 let dailyChart: ECharts | null = null;
 
-const sortedTrades = computed(() => {
-  return [...mt5ReportTrades].sort((a, b) => dateValue(b.exitTime) - dateValue(a.exitTime));
+const filteredTrades = computed(() => {
+  const start = dayjs().subtract(rangeDays.value - 1, 'day').startOf('day');
+
+  return allTrades.value
+    .filter(isMt5Trade)
+    .filter((trade) => dayjs(trade.exitTime || trade.entryTime).isAfter(start) || dayjs(trade.exitTime || trade.entryTime).isSame(start))
+    .sort((a, b) => dateValue(b.exitTime || b.entryTime) - dateValue(a.exitTime || a.entryTime));
 });
 
+const sortedTrades = computed(() => filteredTrades.value);
 const recentTrades = computed(() => sortedTrades.value.slice(0, 10));
 const pagedTrades = computed(() => {
   const start = (page.value - 1) * pageSize;
@@ -187,39 +206,51 @@ const pagedTrades = computed(() => {
 });
 
 const stats = computed(() => {
-  const wins = mt5ReportTrades.filter((trade) => trade.netPnl > 0);
-  const losses = mt5ReportTrades.filter((trade) => trade.netPnl < 0);
-  const grossProfit = wins.reduce((sum, trade) => sum + trade.netPnl, 0);
-  const grossLoss = Math.abs(losses.reduce((sum, trade) => sum + trade.netPnl, 0));
-  const netPnl = mt5ReportTrades.reduce((sum, trade) => sum + trade.netPnl, 0);
-  const bestTrade = mt5ReportTrades.reduce((best, trade) => trade.netPnl > best.netPnl ? trade : best, mt5ReportTrades[0]);
-  const worstTrade = mt5ReportTrades.reduce((worst, trade) => trade.netPnl < worst.netPnl ? trade : worst, mt5ReportTrades[0]);
+  const trades = filteredTrades.value;
+  const wins = trades.filter((trade) => trade.pnl > 0);
+  const losses = trades.filter((trade) => trade.pnl < 0);
+  const grossProfit = wins.reduce((sum, trade) => sum + trade.pnl, 0);
+  const grossLoss = Math.abs(losses.reduce((sum, trade) => sum + trade.pnl, 0));
+  const netPnl = trades.reduce((sum, trade) => sum + trade.pnl, 0);
+  const bestTrade = trades.reduce<Trade | null>((best, trade) => !best || trade.pnl > best.pnl ? trade : best, null);
+  const worstTrade = trades.reduce<Trade | null>((worst, trade) => !worst || trade.pnl < worst.pnl ? trade : worst, null);
 
   return {
     netPnl,
-    fee: mt5ReportTrades.reduce((sum, trade) => sum + trade.fee, 0),
-    swap: mt5ReportTrades.reduce((sum, trade) => sum + trade.swap, 0),
+    fee: trades.reduce((sum, trade) => sum + trade.fee, 0),
+    swap: 0,
     winCount: wins.length,
     lossCount: losses.length,
-    winRate: mt5ReportTrades.length ? (wins.length / mt5ReportTrades.length) * 100 : 0,
+    winRate: trades.length ? (wins.length / trades.length) * 100 : 0,
     profitFactor: grossLoss ? grossProfit / grossLoss : grossProfit,
-    averageNetPnl: mt5ReportTrades.length ? netPnl / mt5ReportTrades.length : 0,
+    averageNetPnl: trades.length ? netPnl / trades.length : 0,
     bestTrade,
     worstTrade
   };
 });
 
 const symbolSummary = computed(() => {
-  return Array.from(new Set(mt5ReportTrades.map((trade) => trade.symbol))).join(', ');
+  return Array.from(new Set(filteredTrades.value.map((trade) => trade.symbol))).join(', ') || '-';
+});
+
+const periodLabel = computed(() => {
+  if (!filteredTrades.value.length) return `近 ${rangeDays.value} 天暂无交易`;
+
+  const dates = filteredTrades.value
+    .map((trade) => dayjs(trade.exitTime || trade.entryTime))
+    .filter((date) => date.isValid())
+    .sort((a, b) => a.valueOf() - b.valueOf());
+
+  return `${dates[0].format('YYYY-MM-DD')} 至 ${dates[dates.length - 1].format('YYYY-MM-DD')}`;
 });
 
 const dailyStats = computed(() => {
   const map = new Map<string, { date: string; netPnl: number; count: number }>();
 
-  for (const trade of mt5ReportTrades) {
-    const date = normalizeDate(trade.exitTime).slice(0, 10);
+  for (const trade of filteredTrades.value) {
+    const date = dayjs(trade.exitTime || trade.entryTime).format('YYYY-MM-DD');
     const current = map.get(date) || { date, netPnl: 0, count: 0 };
-    current.netPnl += trade.netPnl;
+    current.netPnl += trade.pnl;
     current.count += 1;
     map.set(date, current);
   }
@@ -228,6 +259,7 @@ const dailyStats = computed(() => {
 });
 
 onMounted(async () => {
+  await loadTrades();
   await nextTick();
   renderDailyChart();
   window.addEventListener('resize', resizeChart);
@@ -237,6 +269,28 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', resizeChart);
   dailyChart?.dispose();
 });
+
+watch([dailyStats, rangeDays], () => {
+  page.value = 1;
+  renderDailyChart();
+});
+
+async function loadTrades() {
+  loading.value = true;
+  try {
+    const response = await fetchTrades({
+      status: 'closed',
+      page: 1,
+      pageSize: 5000
+    });
+    allTrades.value = response.data;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : 'MT5 报表数据加载失败');
+    allTrades.value = [];
+  } finally {
+    loading.value = false;
+  }
+}
 
 function renderDailyChart() {
   if (!dailyChartRef.value) return;
@@ -278,16 +332,17 @@ function resizeChart() {
   dailyChart?.resize();
 }
 
-function normalizeDate(value: string | null) {
-  return (value || '').replace(/\./g, '-');
+function isMt5Trade(trade: Trade) {
+  return trade.tradeId?.startsWith('MT5-') || trade.tags.includes('MT5');
 }
 
-function dateValue(value: string | null) {
-  return new Date(normalizeDate(value)).getTime();
+function dateValue(value: string | null | undefined) {
+  return value ? new Date(value).getTime() : 0;
 }
 
-function formatDateTime(value: string | null) {
-  return normalizeDate(value).slice(0, 16);
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return '-';
+  return dayjs(value).format('YYYY-MM-DD HH:mm');
 }
 
 function formatCurrency(value: number) {
@@ -332,6 +387,14 @@ function formatPrice(value: number) {
 .report-hero p {
   margin: 0;
   color: #766e65;
+}
+
+.hero-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .metric-grid {
