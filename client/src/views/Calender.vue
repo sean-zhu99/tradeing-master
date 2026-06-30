@@ -194,16 +194,7 @@ const calendarWeeks = computed<WeekRow[]>(() => {
     weeks.push({
       key: cursor.format('YYYY-MM-DD'),
       days,
-      summary: days.reduce(
-        (summary, day) => ({
-          totalPnl: Number((summary.totalPnl + (day.summary?.totalPnl || 0)).toFixed(2)),
-          tradeCount: summary.tradeCount + (day.summary?.tradeCount || 0),
-          winCount: summary.winCount + (day.summary?.winCount || 0),
-          lossCount: summary.lossCount + (day.summary?.lossCount || 0),
-          totalFee: Number((summary.totalFee + (day.summary?.totalFee || 0)).toFixed(2))
-        }),
-        { totalPnl: 0, tradeCount: 0, winCount: 0, lossCount: 0, totalFee: 0 }
-      )
+      summary: buildWeekSummary(cursor)
     });
 
     cursor = cursor.add(7, 'day');
@@ -211,6 +202,26 @@ const calendarWeeks = computed<WeekRow[]>(() => {
 
   return weeks;
 });
+
+function buildWeekSummary(weekStart: dayjs.Dayjs): WeekRow['summary'] {
+  const summary = { totalPnl: 0, tradeCount: 0, winCount: 0, lossCount: 0, totalFee: 0 };
+
+  for (let index = 0; index < 7; index += 1) {
+    const date = weekStart.add(index, 'day');
+    if (!date.isSame(currentMonth.value, 'month')) continue;
+
+    const daySummary = summaryMap.value.get(date.format('YYYY-MM-DD'));
+    if (!daySummary) continue;
+
+    summary.totalPnl = Number((summary.totalPnl + daySummary.totalPnl).toFixed(2));
+    summary.tradeCount += daySummary.tradeCount;
+    summary.winCount += daySummary.winCount;
+    summary.lossCount += daySummary.lossCount;
+    summary.totalFee = Number((summary.totalFee + daySummary.totalFee).toFixed(2));
+  }
+
+  return summary;
+}
 
 const monthSummaries = computed(() => {
   return tradingStore.dailySummary.filter((summary) => dayjs(summary.date).isSame(currentMonth.value, 'month'));
@@ -232,7 +243,7 @@ const worstDay = computed(() => {
 });
 
 const activeTrades = computed(() => {
-  return tradingStore.trades.filter((trade) => (trade.exitTime || trade.entryTime).slice(0, 10) === activeDate.value);
+  return tradingStore.trades.filter((trade) => formatTradeDate(trade) === activeDate.value);
 });
 
 const activeDateTitle = computed(() => (activeDate.value ? `${activeDate.value} 交易明细` : '交易明细'));
@@ -274,6 +285,10 @@ function formatCompact(value: number) {
 
 function formatTime(value: string) {
   return dayjs(value).format('YYYY-MM-DD HH:mm');
+}
+
+function formatTradeDate(trade: Trade) {
+  return dayjs(trade.exitTime || trade.entryTime).format('YYYY-MM-DD');
 }
 </script>
 

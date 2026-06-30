@@ -323,7 +323,7 @@ export const useTradingStore = defineStore('trading', () => {
     const map = new Map<string, DailySummary>();
 
     for (const trade of getAnalysisTrades(source)) {
-      const date = (trade.exitTime || trade.entryTime).slice(0, 10);
+      const date = formatTradeDate(trade);
       const current = map.get(date) || {
         date,
         totalPnl: 0,
@@ -341,6 +341,10 @@ export const useTradingStore = defineStore('trading', () => {
     }
 
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  function formatTradeDate(trade: Trade) {
+    return new Date(trade.exitTime || trade.entryTime).toLocaleDateString('en-CA');
   }
 
   function buildOverallStats(source: Trade[]): OverallStats {
